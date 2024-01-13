@@ -1,0 +1,120 @@
+desc:MIDI Mapped Note Repeater
+//tags: MIDI processing
+
+in_pin:none
+out_pin:none
+
+@init 
+velocity=0;
+status=128;
+status2=256;
+
+memset(velocity,0,128);
+memset(status,0,128);
+memset(status2,0,128);
+    
+@block
+
+// Process MIDI input
+
+while( midirecv( offset, msg1, msg2, msg3 ) ) (
+  msg_channel = msg1 & 0x0f;
+  msg_status = msg1 & 0xf0;
+  
+  msg_status == 0x90 ?
+  (
+    // MIDI note on - record the initial velocity
+    
+    velocity[ msg2 ] = msg3;
+    status[ msg2 ] = 0;
+    
+  ) : msg_status == 0x80 ?
+  (
+    // MIDI note off - reset everything and send a note off if needed
+    velocity[ msg2 ] = 0;
+    status[ msg2 ] = 0;
+    status2[ msg2 ] > 0.0 ? midisend(0,0x80,msg2,0);
+  ) : msg_status == 0xa0 ?
+  (
+    // MIDI note aftertouch
+    
+    velocity[ msg2 ] = msg3;
+  );
+);
+
+// process_note( incoming, outgoing, beat_divisor, beat_offset )
+//
+// incoming: incoming MIDI note from controller
+// outgoing: outputgoing MIDI note
+// beat_divisor:
+//    1.0 = play note every beat
+//    0.5 = play note every other beat
+//    2.0 = play note every 1/2 beat
+// beat_offset:
+//    0.0 = play on the beat
+//    0.5 = play on the off-beat
+//
+
+function process_note( x, no, y, offset )
+(
+  velocity[ x ] > 0.0 ?
+  (
+    cur_beat = ( beat_position * y ) - floor(  beat_position * y );
+    cur_beat += offset;
+    
+    cur_beat > 1.0 ? cur_beat -= 1.0;
+
+    cur_beat < 0.125 ?
+    (
+      status2[ x ] == 0.0 ?
+      (
+        midisend(0,0x90,no,velocity[ x ]);
+        status2[ x ] = 1.0;
+      );
+    ) : (
+      status2[ x ] != 0.0 ?
+      (
+        midisend(0,0x80,no,velocity[ x ]);
+        status2[ x ] = 0.0;
+      );
+    );
+  );
+);
+
+//
+// Example map for Akai MPD18 with pads in Aftertouch mode
+//
+
+// Bass Drum
+
+process_note( 36, 36, 0.5, 0 );
+process_note( 37, 36, 1.0, 0 );
+process_note( 38, 36, 1.0, 0.5 );
+process_note( 39, 36, 4/3.0, 0 );
+
+// Snare
+
+process_note( 40, 38, 0.5, 0.5 );
+process_note( 41, 38, 1.0, 0.5 );
+process_note( 42, 38, 4/3, 0.5 );
+process_note( 43, 38, 8/3, 0.5 );
+
+// Hi-hat
+
+process_note( 44, 42, 1.0, 0.0 );
+process_note( 45, 42, 2.0, 0.0 );
+process_note( 46, 42, 6, 0.0 );
+process_note( 47, 42, 8, 0.0 );
+
+// Toms and ride cymbal
+
+process_note( 48, 43, 4, 0.0 );
+process_note( 49, 45, 4, 0.0 );
+process_note( 50, 48, 4, 0.0 );
+process_note( 51, 51, 4, 0.0 );
+
+
+@sample
+
+
+
